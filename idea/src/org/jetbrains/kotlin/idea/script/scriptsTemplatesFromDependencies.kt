@@ -6,17 +6,21 @@
 package org.jetbrains.kotlin.idea.script
 
 import com.intellij.ProjectTopics
+import com.intellij.openapi.fileTypes.FileTypeManager
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.roots.ModuleRootEvent
 import com.intellij.openapi.roots.ModuleRootListener
 import com.intellij.openapi.roots.OrderEnumerator
 import com.intellij.openapi.vfs.JarFileSystem
 import com.intellij.openapi.vfs.VirtualFile
+import org.jetbrains.kotlin.idea.KotlinFileType
 import org.jetbrains.kotlin.idea.core.script.ScriptDefinitionContributor
 import org.jetbrains.kotlin.idea.core.script.ScriptDefinitionsManager
 import org.jetbrains.kotlin.idea.core.script.loadDefinitionsFromTemplates
+import org.jetbrains.kotlin.idea.util.application.runWriteAction
 import org.jetbrains.kotlin.idea.util.projectStructure.allModules
 import org.jetbrains.kotlin.script.KotlinScriptDefinition
+import org.jetbrains.kotlin.scripting.compiler.plugin.KotlinScriptDefinitionAdapterFromNewAPIBase
 import java.io.File
 import java.util.concurrent.locks.ReentrantReadWriteLock
 import kotlin.concurrent.read
@@ -114,12 +118,22 @@ class ScriptTemplatesFromDependenciesProvider(private val project: Project) : Sc
                 }
             }
         }
-        return loadDefinitionsFromTemplates(
+        val definitions = loadDefinitionsFromTemplates(
             templateClassNames = templates!!.templates,
             templateClasspath = templates!!.classpath,
             environment = mapOf(
-                "projectRoot" to (project.basePath ?: project.baseDir.canonicalPath)?.let(::File))
+                "projectRoot" to (project.basePath ?: project.baseDir.canonicalPath)?.let(::File)
+            )
         )
+
+        for (definition in definitions.filterIsInstance<KotlinScriptDefinitionAdapterFromNewAPIBase>()) {
+            val extension = definition.scriptFileExtensionWithDot.removePrefix(".")
+            if (FileTypeManager.getInstance().getFileTypeByExtension(extension) != KotlinFileType.INSTANCE) {
+                runWriteAction { FileTypeManager.getInstance().associateExtension(KotlinFileType.INSTANCE, extension) }
+            }
+        }
+
+        return definitions
     }
 }
 
